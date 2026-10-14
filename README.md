@@ -81,7 +81,9 @@ Open `physics-planner.html` in a text editor and search for these:
   - notes
 - **Major requirements** (search `function majorAudit`). The Graduate Option rules. `PE_EXCLUDE` lists the courses that can't count as the physics elective.
 - **Hub requirement counts** (search `const HUB=[`). Units needed in each area for entering first-year students.
-- **CAS rules** (search `function casAudit` and `LANG_DONE`). The 128 credits, lab requirement and language requirement.
+- **CAS rules** (search `function casAudit` and `LANG_DONE`). The 128 credits, lab requirement, language requirement, BU residency (68 credits, or 60 for transfers), the 68-credit transfer cap, and the 4 principal physics courses transfers must take in CAS.
+- **AP credit chart** (search `const AP_TABLE`). One line per AP exam: the minimum score, the BU course(s) it equals, and the Hub units BU's chart lists. Update it each year from the Registrar's Advanced Credit Guide (https://www.bu.edu/reg/transfer-credit/test-credit/), and change `AP_YEAR`.
+- **Hub requirements for transfer students** (search `const REQ_TR`). The 10 requirements transfer students meet with BU courses.
 - **Standard four-year plan** (search `function defaultItems`).
 
 ## Notes and limits
