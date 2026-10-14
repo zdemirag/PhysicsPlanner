@@ -193,6 +193,9 @@ body.faculty .facbar{display:block}
 .orow .sub{grid-column:1 / -1;font-size:11px;color:var(--warn)}
 .orow.changed .sub{color:var(--prop)}
 
+.chip.planned{background:transparent;border:1px dashed var(--line);padding:0 3px}
+.phbox{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--sunk)}
+.phbox .btn.primary{align-self:flex-start}
 /* Hub finder */
 dialog.wide{width:min(780px,calc(100vw - 32px))}
 .findlink{border:1px solid var(--line);background:var(--surface);border-radius:4px;font-size:11px;padding:0 6px;margin-right:6px;color:var(--accent);line-height:1.5}
@@ -624,7 +627,7 @@ function cardHTML(it){const b=info(it);const iss=(A.byItem[it.id]||[]);
   return `<button class="card${cls}" draggable="true" data-id="${it.id}" style="--c:var(${DEPT_COLOR[b.dept]||'--free'})">
     <span class="code">${esc(b.ph||it.code)}</span><span class="cr">${b.cr}</span>
     <span class="t">${esc(b.ph?(it.ov?.title||'Placeholder · click to edit'):b.title)}</span>
-    <span class="chips">${(b.hub||[]).map(h=>`<span class="chip" title="${esc(TAG_NAME[h]||h)}">${h}</span>`).join('')}</span>
+    <span class="chips">${(b.hub||[]).map(h=>`<span class="chip${b.ph?' planned':''}" title="${b.ph?'Planned: ':''}${esc(TAG_NAME[h]||h)}">${h}</span>`).join('')}</span>
     ${top?`<span class="flag" title="${esc(iss.map(x=>x.h).join('\n'))}">${cardFlags(iss)}</span>`:''}
   </button>`}
 /* fixed order inside a term: math, physics, then writing, language, other courses, Hub and free placeholders */
@@ -728,6 +731,9 @@ function openDetail(id){const it=S.items.find(i=>i.id===id);if(!it)return;const 
   const iss=(A.byItem[id]||[]).map(i=>`<div class="issue ${i.sev}"><div class="h"><span>${esc(i.h)}</span></div>${i.lines?`<ul>${i.lines.map(l=>`<li>${esc(l)}</li>`).join('')}</ul>`:''}</div>`).join('');
   body.innerHTML=`<h3><span class="mono">${esc(base.ph||it.code)}</span>${base.ph?'':`<span>${esc(b.title)}</span>`}</h3>
    ${iss}
+   ${base.ph?`<div class="phbox">${base.dept!=='PY'&&base.dept!=='MA'?`<button type="button" class="btn primary" data-findslot>Find a Hub course for this slot</button>`:''}
+     <label for="edTitle">Course number${base.dept!=='PY'&&base.dept!=='MA'?' or description':''}<input type="text" id="edTitle" value="${esc(it.ov?.title||'')}" placeholder="${base.dept==='PY'?'e.g. PY 421':base.dept==='MA'?'e.g. MA 226':'e.g. PH 100, or a description'}" autocomplete="off"></label>
+     <div class="note" id="edHint"></div></div>`:''}
    <dl class="kv"><dt>Term</dt><dd>${termName(it.term)}</dd><dt>Credits</dt><dd>${b.cr}</dd>
    ${base.dept==='PY'||SCHED[it.code]||HUBC[it.code]?`<dt>Offered</dt><dd>${offLabel(off)}${S.offer[it.code]?' (your change)':SCHED[it.code]||HUBC[it.code]?' in '+YEAR:''}${base.src?`<div class="note">Published pattern. ${esc(base.src)}</div>`:''}</dd>`:''}
    ${SCHED[it.code]?`<dt>${YEAR} sections</dt><dd>${schedHTML(it.code)}</dd>`:HUBC[it.code]?`<dt>${YEAR} lectures</dt><dd>${hubSchedHTML(it.code)}</dd>`:''}
@@ -735,14 +741,13 @@ function openDetail(id){const it=S.items.find(i=>i.id===id);if(!it)return;const 
    <dt>Prerequisites</dt><dd>${reqs}</dd>
    ${!editable?`<dt>Hub units</dt><dd>${b.hub.length?b.hub.map(h=>esc(TAG_NAME[h])).join(', '):'<span class="note">None</span>'}</dd>`:''}
    ${base.note?`<dt>Note</dt><dd class="note">${esc(base.note)}</dd>`:''}</dl>
-   ${editable?`<label for="edTitle">Course or description<input type="text" id="edTitle" value="${esc(it.ov?.title??(S.custom[it.code]?b.title:''))}" placeholder="e.g. PH 100 Introduction to Philosophy"></label>
-     <label for="edCr" style="max-width:120px">Credits<input type="number" id="edCr" min="0" max="8" value="${b.cr}"></label>
-     <div><div class="sect">Hub units this course carries</div>${hubPicker(b.hub)}</div>`:''}
+   ${editable&&!base.ph?`<label for="edTitle">Title<input type="text" id="edTitle" value="${esc(b.title)}"></label>`:''}
+   ${editable?`<label for="edCr" style="max-width:120px">Credits<input type="number" id="edCr" min="0" max="8" value="${b.cr}"></label>
+     <div><div class="sect">${base.ph?'Planned Hub units (until a real course fills the slot)':'Hub units this course carries'}</div>${hubPicker(b.hub)}</div>`:''}
    ${S.mode==='faculty'&&base.dept==='PY'&&CAT[it.code]?`<div><div class="sect">Offering pattern for this plan</div><div class="seg" role="group" aria-label="Offering">
       ${['F','S','FS'].map(o=>`<button type="button" data-off="${o}" aria-pressed="${off===o}">${offLabel(o)}</button>`).join('')}</div>
       ${S.offer[it.code]?`<button type="button" class="btn" data-offreset style="margin-left:8px">Use published</button>`:''}</div>`:''}
    <label for="edTerm" style="max-width:200px">Move to<select id="edTerm">${Array.from({length:9},(_,t)=>t-1).map(t=>`<option value="${t}"${t===it.term?' selected':''}>${termName(t)}</option>`).join('')}</select></label>
-   ${base.ph&&base.dept!=='PY'&&base.dept!=='MA'?`<button type="button" class="btn" data-findslot style="align-self:flex-start">Find a Hub course for this slot</button>`:''}
    <div class="foot"><button type="button" class="btn danger" data-remove>Remove</button><button type="button" class="btn" data-close>Cancel</button><button type="button" class="btn primary" data-save>Save</button></div>`;
   body.onclick=e=>{const t=e.target.closest('button');if(!t)return;
     if(t.hasAttribute('data-findslot')){openFinder({term:it.term,replace:it.id});return}
@@ -751,10 +756,23 @@ function openDetail(id){const it=S.items.find(i=>i.id===id);if(!it)return;const 
     if(t.hasAttribute('data-remove')){dlg.close();removeItem(id);toast(`Removed ${base.ph?base.ph.toLowerCase():it.code}.`);return}
     if(t.hasAttribute('data-close')){dlg.close();return}
     if(t.hasAttribute('data-save')){
+      /* a real course number typed into a placeholder replaces the placeholder with that course */
+      if(base.ph){const m=matchCourse($('#edTitle').value);if(m){const nt=+$('#edTerm').value;
+        const dup=S.items.find(i=>i.code===m&&i.id!==it.id);if(dup){toast(`${m} is already in ${termName(dup.term)}.`);return}
+        if(!canPlace(m,nt))return;
+        it.code=m;it.ov=null;it.term=nt;dlg.close();render();flash(it.id);toast(`${m} now fills this slot, with its own Hub units.`);return}}
       if(editable){const hub=[...body.querySelectorAll('input[name=hub]:checked')].map(x=>x.value);const title=$('#edTitle').value.trim();const cr=+$('#edCr').value||0;
         if(S.custom[it.code]){Object.assign(S.custom[it.code],{title:title||it.code,cr,hub})}else{it.ov={title:title||undefined,cr,hub}}}
       const nt=+$('#edTerm').value;dlg.close();if(nt!==it.term)moveItem(id,nt);else render();}};
+  if(base.ph){const ti=$('#edTitle'),hint=()=>{const m=matchCourse(ti.value),el=$('#edHint');
+      if(m){const c=course(m);el.innerHTML=`<b>${esc(m)}</b> ${esc(c.title)}: ${c.hub.length?'carries '+c.hub.map(h=>esc(TAG_NAME[h])).join(', '):'no Hub units'}. Save to put it in this slot; its own Hub units replace the planned ones.`}
+      else el.textContent=ti.value.trim()?'Not a course number the planner knows, so this stays a placeholder with the planned Hub units below.':'Type a course number to fill this slot with a real course.'};
+    ti.oninput=hint;hint()}
   dlg.showModal()}
+/* first course number found at the start of free text: "ph 100 intro" -> "PH 100", "CFA AR 121" */
+function matchCourse(text){const toks=String(text||'').trim().toUpperCase().replace(/^CAS\s+/,'').split(/\s+/).filter(Boolean);
+  for(const n of [3,2,1]){if(toks.length<n)continue;const c=normCode(toks.slice(0,n).join(' '));const b=course(c);if(b&&!b.multi)return c}
+  return null}
 function schedHTML(code){const sc=SCHED[code];const fac=S.mode==='faculty';
   return ['F','S'].filter(s=>sc[s]).map(s=>{const e=sc[s];const comp=Object.values(e.comps||{}).reduce((a,n)=>a+n,0);
     const secs=e.secs.map(x=>`<div><span class="mono">${esc(x.s)}</span> · ${x.m.length?esc(x.m.map(fmtMeet).join(' + ')):'time arranged'}${x.i.length?` · ${esc(x.i.join(', '))}`:''}${fac?` · <span class="mono">${s==='F'?`${x.enr}/${x.cap}`:`cap ${x.cap}`}</span>`:''}</div>`).join('');
@@ -803,7 +821,7 @@ function renderFinder(){const {out,need}=finderResults();const ph=FD.replace&&S.
       <div class="fmeta">${tags}<span class="fwhen">${when}</span>${!r.fit.ok?`<span class="fclash">Clashes with ${esc(r.fit.with)}</span>`:''}</div></div>
       <button type="button" class="btn" data-pick="${esc(r.code)}">${btn}</button></div>`}).join('');
   body.innerHTML=`<h3>Find Hub courses</h3>
-   ${ph?`<div class="note">Replacing the ${esc(course(ph.code)?.ph||'placeholder').toLowerCase()} in ${termName(ph.term)}.</div>`:''}
+   ${ph?`<div class="note">Filling the ${esc((ph.ov?.title||course(ph.code)?.ph||'placeholder').toLowerCase())} slot in ${termName(ph.term)}${(ph.ov?.hub||[]).length?`, planned for ${ph.ov.hub.map(h=>esc(TAG_NAME[h])).join(' and ')}`:''}. Those are only the planned units: pick other areas below, or choose "All areas", to look for something else. The course you choose brings its own Hub units.</div>`:''}
    <div class="frow2"><label for="fdQ">Search<input type="text" id="fdQ" value="${esc(FD.q)}" placeholder="Code or title, e.g. PH 100 or ethics"></label>
      <label for="fdTerm">Term<select id="fdTerm"${ph?' disabled':''}><option value="">Any term</option>${Array.from({length:8},(_,t)=>`<option value="${t}"${FD.term===t?' selected':''}>${termName(t)}</option>`).join('')}</select></label></div>
    <div><div class="sect" style="margin-top:0">Hub areas <span class="note" style="text-transform:none;letter-spacing:0">· courses carrying any selected area · numbers show units still needed</span></div>
