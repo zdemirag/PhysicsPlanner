@@ -97,6 +97,8 @@ body.faculty .facbar{display:block}
 .year{display:grid;grid-template-columns:64px repeat(2,minmax(0,1fr));gap:10px}
 @media (max-width:620px){.year{grid-template-columns:minmax(0,1fr)}.year .ylab{flex-direction:row;gap:8px}}
 .ylab{display:flex;flex-direction:column;padding-top:8px}
+.year.prior .term{min-height:0;background:var(--sunk)}
+.priornote{font-size:12px;color:var(--muted);align-self:center;max-width:46ch}
 .ylab b{font-size:13px}
 .ylab span{font-size:11.5px;color:var(--muted)}
 .term{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column;min-width:0;min-height:120px;transition:border-color .15s,background .15s}
@@ -240,7 +242,7 @@ footer a{color:inherit}
 <header class="top">
   <div class="brand">
     <h1>Physics BA Planner</h1>
-    <div class="sub">BA in Physics, Graduate Option · BU Hub · CAS requirements · terms and times from the <span data-year>2026–27</span> class schedule · no AP or transfer credit</div>
+    <div class="sub">BA in Physics, Graduate Option · BU Hub · CAS requirements · terms and times from the <span data-year>2026–27</span> class schedule · standard plan follows the department's sample schedule</div>
   </div>
   <div class="controls">
     <div class="seg" id="modeSeg" role="group" aria-label="View">
@@ -416,18 +418,21 @@ const PE_EXCLUDE=['PY 313','PY 351','PY 355','PY 401','PY 402','PY 482','PY 491'
 /* ---------- State ---------- */
 const KEY='py-ba-planner-v3';
 let uid=1;const nid=()=>'i'+(uid++)+Math.random().toString(36).slice(2,6);
+/* standard plan = the department's Graduate Option sample schedule (term -1 = credit before BU;
+   social science / humanities slots carry Hub units that real courses in those terms carry) */
 function defaultItems(){
-  const P=[[0,'MA 123'],[0,'PY 251'],[0,'WR 120'],[0,'LANG 1'],
-   [1,'MA 124'],[1,'PY 252'],[1,'WR 151'],[1,'LANG 2'],
-   [2,'MA 225'],[2,'PY 351'],[2,'LANG 3'],[2,'HUB',{hub:['PIL','ETR']}],
-   [3,'PY 355'],[3,'MA 242'],[3,'LANG 4'],[3,'HUB',{hub:['AEX','CRI']}],
-   [4,'PY 405'],[4,'PY 408'],[4,'HUB',{hub:['SO1','GCI']}],[4,'FREE'],
-   [5,'PY 406'],[5,'PY 451'],[5,'HUB',{hub:['WIN','CRI']}],[5,'FREE'],
-   [6,'PY 452'],[6,'PY 581'],[6,'FREE'],[6,'FREE'],
-   [7,'PY 410'],[7,'PY ELECTIVE'],[7,'FREE'],[7,'FREE']];
+  const P=[[-1,'MA 123'],
+   [0,'PY 251'],[0,'MA 124'],[0,'WR 120'],[0,'LANG 1'],
+   [1,'PY 252'],[1,'MA 225'],[1,'WR 151'],[1,'LANG 2'],
+   [2,'PY 351'],[2,'MA ELECTIVE',{title:'MA 226 or MA 242'}],[2,'HUB',{title:'Social science',hub:['SO1','GCI']}],[2,'LANG 3'],
+   [3,'PY 355'],[3,'MA ELECTIVE',{title:'MA 226 or MA 242'}],[3,'HUB',{title:'Social science',hub:['ETR','CRI']}],[3,'LANG 4'],
+   [4,'PY 405'],[4,'PY 408'],[4,'HUB',{title:'Humanities',hub:['PIL','WIN']}],[4,'FREE'],
+   [5,'PY 406'],[5,'PY 451'],[5,'HUB',{title:'Humanities',hub:['AEX','CRI']}],[5,'FREE'],
+   [6,'PY 452'],[6,'PY 581'],[6,'FREE'],
+   [7,'PY 410'],[7,'PY ELECTIVE',{title:'PY 371, PY 421 or 500-level'}],[7,'FREE']];
   return P.map(([term,code,ov])=>({id:nid(),code,term,ov:ov||null}));
 }
-function freshState(){return{v:5,mode:'student',start:META.fallYear||2026,items:defaultItems(),offer:{},custom:{},tab:'issues'}}
+function freshState(){return{v:6,mode:'student',start:META.fallYear||2026,items:defaultItems(),offer:{},custom:{},tab:'issues'}}
 let S;
 try{S=JSON.parse(localStorage.getItem(KEY)||'null')}catch(e){S=null}
 if(!S||!Array.isArray(S.items))S=freshState();
@@ -436,6 +441,8 @@ S.offer=S.offer||{};S.custom=S.custom||{};S.tab=S.tab||'issues';
 if(!S.v||S.v<5){const hasMA242=S.items.some(i=>i.code==='MA 242');let restored=false;
   S.items=S.items.filter(i=>{if(i.code!=='MA ELECTIVE')return true;if(!hasMA242&&!restored){i.code='MA 242';restored=true;return true}return false});
   S.v=5}
+/* one-time update: the standard plan now follows the department's sample schedule */
+if(S.v<6){S.items=defaultItems();S.v=6}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 
 /* ---------- Helpers ---------- */
@@ -445,8 +452,9 @@ const course=code=>CAT[code]||S.custom[code]||hubCourse(code)||null;
 function info(it){const b=course(it.code)||{code:it.code,title:it.code,cr:4,dept:'OTHER',hub:[],req:[]};const o=it.ov||{};
   return Object.assign({},b,{title:o.title??b.title,cr:o.cr??b.cr,hub:o.hub??b.hub});}
 const seasonOf=t=>t%2===0?'F':'S';
-const termName=t=>`${SEASON[t%2]} ${S.start+Math.ceil(t/2)}`;
-const termShort=t=>`${SEASON[t%2]} Y${Math.floor(t/2)+1}`;
+/* term -1 holds credit earned before BU (AP, placement) */
+const termName=t=>t<0?'Credit before BU':`${SEASON[t%2]} ${S.start+Math.ceil(t/2)}`;
+const termShort=t=>t<0?'Prior credit':`${SEASON[t%2]} Y${Math.floor(t/2)+1}`;
 /* offering: faculty override, else this year's schedule, else the published pattern */
 const schedPat=code=>{const sc=SCHED[code]||HUBC[code];return sc?((sc.F?'F':'')+(sc.S?'S':''))||null:null};
 const offering=code=>{const b=course(code);if(!b)return null;return S.offer[code]??schedPat(code)??b.off??null};
@@ -494,7 +502,7 @@ function analyze(){
         push({sev:'info',item:it.id,short:'Instructor consent',h:`${it.code} alongside ${hit[0]} needs instructor consent`,lines:[`The course page allows ${it.code} with ${hit[0]} in the same term only with the instructor's consent.`]});
       }
     }
-    const off=offering(it.code);const seas=SEASON[it.term%2].toLowerCase();
+    const off=it.term<0?null:offering(it.code);const seas=SEASON[Math.abs(it.term)%2].toLowerCase();
     if(off&&!off.includes(seasonOf(it.term))&&b.dept!=='PY'){
       push({sev:'warn',item:it.id,short:`Not run in ${seas} ${YEAR}`,h:`${it.code} ran only in ${off==='F'?'fall':'spring'} in ${YEAR}`,lines:[`Check that it will run in ${seas}, or move it to a ${off==='F'?'fall':'spring'} term.`]});
     }else if(off&&!off.includes(seasonOf(it.term))){
@@ -510,7 +518,7 @@ function analyze(){
       lines.push(`Running it in ${SEASON[it.term%2].toLowerCase()} needs a new section or moving the existing one. Students on the standard sequence would then be out of step.`);
       if(fac)push({sev:'prop',item:it.id,short:`Not offered in ${SEASON[it.term%2].toLowerCase()}`,h:`${it.code} in ${termName(it.term)}: not normally taught in ${SEASON[it.term%2].toLowerCase()}`,lines});
       else push({sev:'err',item:it.id,short:`Not offered in ${SEASON[it.term%2].toLowerCase()}`,h:`${it.code} is not offered in ${SEASON[it.term%2].toLowerCase()}`,lines:[`${offLabel(off)} in the ${YEAR} schedule. Move it to a ${off==='F'?'fall':'spring'} term.`]});
-    }else if(!SCHED[it.code]&&CAT[it.code]&&!CAT[it.code].multi&&(b.dept==='PY'||b.dept==='MA')){
+    }else if(it.term>=0&&!SCHED[it.code]&&CAT[it.code]&&!CAT[it.code].multi&&(b.dept==='PY'||b.dept==='MA')){
       push({sev:'info',item:it.id,short:'Not on '+YEAR+' schedule',h:`${it.code} is not on the ${YEAR} schedule`,lines:[`${b.off?`Published pattern: ${offLabel(b.off).toLowerCase()}. `:''}Confirm it will run before relying on it.`]});
     }
   }
@@ -600,7 +608,7 @@ function renderShelf(){
   $('#codes').innerHTML=all.concat(Object.keys(HUBC).filter(c=>!CAT[c]&&!S.custom[c])).map(c=>`<option value="${esc(c)}">${esc(course(c).title)}</option>`).join('');
 }
 /* in faculty view: a physics course outside its normal (scheduled or published) terms, even if you've opened that term in Offerings */
-function isOffTerm(it){if(S.mode!=='faculty')return false;const b=course(it.code);if(!b||b.dept!=='PY'||b.multi)return false;
+function isOffTerm(it){if(S.mode!=='faculty'||it.term<0)return false;const b=course(it.code);if(!b||b.dept!=='PY'||b.multi)return false;
   const normal=schedPat(it.code)??b.off;const now=offering(it.code);const s=seasonOf(it.term);
   return !!((normal&&!normal.includes(s))||(now&&!now.includes(s)))}
 /* all of a card's issues as short labels, most serious first; missing prerequisites merged into one label */
@@ -625,6 +633,12 @@ function cardOrder(a,b){const x=info(a),y=info(b);
   return (DEPT_RANK[x.dept]??4)-(DEPT_RANK[y.dept]??4)||(!!x.ph-!!y.ph)||num(a.code)-num(b.code)||a.code.localeCompare(b.code)||a.id.localeCompare(b.id)}
 function renderYears(){let html='';
   const yname=['First year','Second year','Third year','Fourth year'];
+  {const items=S.items.filter(i=>i.term<0).sort(cardOrder);const cr=items.reduce((a,i)=>a+(+info(i).cr||0),0);
+   html+=`<div class="year prior"><div class="ylab"><b>Before BU</b><span>AP, placement</span></div>
+     <div class="term" data-term="-1"><div class="th"><b>Credit before BU</b><span class="cr">${cr} cr</span></div>
+       <div class="cards">${items.map(cardHTML).join('')}</div>
+       <div class="addrow"><input list="codes" data-addterm="-1" placeholder="Type a course, e.g. MA 123" aria-label="Add credit earned before BU" id="add--1"></div></div>
+     <div class="priornote">Courses here count as already taken, for prerequisites, requirements and credits. The standard plan assumes credit for Calculus I (MA 123), as the department's sample schedule does.</div></div>`}
   for(let y=0;y<4;y++){html+=`<div class="year"><div class="ylab"><b>Year ${y+1}</b><span>${yname[y]}</span></div>`;
     for(const t of [2*y,2*y+1]){const items=S.items.filter(i=>i.term===t).sort(cardOrder);const cr=items.reduce((a,i)=>a+(+info(i).cr||0),0);
       html+=`<div class="term" data-term="${t}"><div class="th"><b>${termName(t)}</b><span class="cr${cr>18||cr<12?' hi':''}">${cr} cr</span></div>
@@ -685,7 +699,7 @@ function renderRail(){
 
 /* ---------- Actions ---------- */
 let toastT;function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3600)}
-function canPlace(code,term){const off=offering(code);
+function canPlace(code,term){if(term<0)return true;const off=offering(code);
   if(S.mode==='student'&&course(code)?.dept==='PY'&&off&&!off.includes(seasonOf(term))){toast(`${code} is offered in ${off==='F'?'fall':'spring'} only. Switch to Faculty view to place it in ${SEASON[term%2].toLowerCase()}.`);return false}
   return true}
 function addCourse(code,term,ov){const b=course(code);
@@ -727,7 +741,7 @@ function openDetail(id){const it=S.items.find(i=>i.id===id);if(!it)return;const 
    ${S.mode==='faculty'&&base.dept==='PY'&&CAT[it.code]?`<div><div class="sect">Offering pattern for this plan</div><div class="seg" role="group" aria-label="Offering">
       ${['F','S','FS'].map(o=>`<button type="button" data-off="${o}" aria-pressed="${off===o}">${offLabel(o)}</button>`).join('')}</div>
       ${S.offer[it.code]?`<button type="button" class="btn" data-offreset style="margin-left:8px">Use published</button>`:''}</div>`:''}
-   <label for="edTerm" style="max-width:200px">Move to<select id="edTerm">${Array.from({length:8},(_,t)=>`<option value="${t}"${t===it.term?' selected':''}>${termName(t)}</option>`).join('')}</select></label>
+   <label for="edTerm" style="max-width:200px">Move to<select id="edTerm">${Array.from({length:9},(_,t)=>t-1).map(t=>`<option value="${t}"${t===it.term?' selected':''}>${termName(t)}</option>`).join('')}</select></label>
    ${base.ph&&base.dept!=='PY'&&base.dept!=='MA'?`<button type="button" class="btn" data-findslot style="align-self:flex-start">Find a Hub course for this slot</button>`:''}
    <div class="foot"><button type="button" class="btn danger" data-remove>Remove</button><button type="button" class="btn" data-close>Cancel</button><button type="button" class="btn primary" data-save>Save</button></div>`;
   body.onclick=e=>{const t=e.target.closest('button');if(!t)return;
@@ -880,7 +894,7 @@ document.addEventListener('dragstart',e=>{const card=e.target.closest('.card'),c
 document.addEventListener('dragend',()=>{document.querySelectorAll('.dragging').forEach(x=>x.classList.remove('dragging'));document.querySelectorAll('.term.over').forEach(x=>x.classList.remove('over','bad','prop'));drag=null});
 document.addEventListener('dragover',e=>{const t=e.target.closest('.term');if(!t||!drag)return;e.preventDefault();
   document.querySelectorAll('.term.over').forEach(x=>x!==t&&x.classList.remove('over','bad','prop'));
-  const off=course(drag.code)?.dept==='PY'?offering(drag.code):null,term=+t.dataset.term;const offTerm=off&&!off.includes(seasonOf(term));
+  const off=course(drag.code)?.dept==='PY'?offering(drag.code):null,term=+t.dataset.term;const offTerm=term>=0&&off&&!off.includes(seasonOf(term));
   t.classList.add('over');t.classList.toggle('bad',offTerm&&S.mode==='student');t.classList.toggle('prop',offTerm&&S.mode==='faculty')});
 document.addEventListener('dragleave',e=>{const t=e.target.closest('.term');if(t&&!t.contains(e.relatedTarget))t.classList.remove('over','bad','prop')});
 document.addEventListener('drop',e=>{const t=e.target.closest('.term');if(!t||!drag)return;e.preventDefault();const term=+t.dataset.term;const d=drag;drag=null;
