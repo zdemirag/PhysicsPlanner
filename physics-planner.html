@@ -213,7 +213,8 @@ dialog.wide{width:min(780px,calc(100vw - 32px))}
 .fcode{font-weight:600;font-size:12.5px}
 .ftitle{font-size:12.5px}
 .fmeta{display:flex;flex-wrap:wrap;gap:3px 6px;align-items:center;margin-top:3px}
-.chip.needc{background:color-mix(in srgb,var(--hub) 20%,var(--surface));color:var(--ink)}
+.chip.selc{background:var(--hub);color:#fff}
+.chip.needc{background:transparent;border:1px solid var(--hub);color:var(--ink);padding:0 3px}
 .fwhen{font-size:11px;color:var(--muted);font-family:var(--mono)}
 .fclash{font-size:11px;color:var(--err)}
 
@@ -805,17 +806,20 @@ function finderResults(){
     if(s&&!h[s])continue;
     const keys=reqKeysOf(h.u);const hit=keys.filter(k=>FD.areas.includes(k));
     if(FD.areas.length&&!hit.length)continue;
+    if(FD.all&&FD.areas.length>1&&hit.length<FD.areas.length)continue;
     if(q&&!(code.toLowerCase().includes(q)||h.t.toLowerCase().includes(q)))continue;
     let fit={ok:true};if(FD.term!=null){fit=fitsTerm(code,FD.term);if(FD.fit&&!fit.ok)continue}
     out.push({code,h,keys,useful:keys.filter(k=>need[k]>0).length,hit:hit.length,fit})}
-  out.sort((a,b)=>b.useful-a.useful||b.hit-a.hit||(a.h.c===4?0:1)-(b.h.c===4?0:1)||a.code.localeCompare(b.code,undefined,{numeric:true}));
+  /* the areas you selected come first; still-needed units only break ties */
+  out.sort((a,b)=>b.hit-a.hit||b.useful-a.useful||(a.h.c===4?0:1)-(b.h.c===4?0:1)||a.code.localeCompare(b.code,undefined,{numeric:true}));
   return{out,need}}
 function renderFinder(){const {out,need}=finderResults();const ph=FD.replace&&S.items.find(i=>i.id===FD.replace);
   const s=FD.term!=null?seasonOf(FD.term):null;
   const chips=HUB.map(x=>{const n=need[x.k];return `<button type="button" class="achip${FD.areas.includes(x.k)?' on':''}${n>0?' need':''}" data-area="${x.k}" aria-pressed="${FD.areas.includes(x.k)}" title="${esc(x.n)}${n>0?` · ${n} still needed`:''}">${x.k}${n>0?`<sup>${n}</sup>`:''}</button>`}).join('');
   const rows=out.slice(0,FD.limit).map(r=>{const e=s?r.h[s]:null;
     const when=s?(e.many?`${e.nsec} sections`:e.secs.length?esc(e.secs[0].m.map(fmtMeet).join(' + '))+(e.secs.length>1?` <span class="note">+${e.secs.length-1} more</span>`:''):'arranged/online'):offShort(schedPat(r.code));
-    const tags=hubTags(r.h.u).map(t=>`<span class="chip${need[tagToReq(t)]>0?' needc':''}" title="${esc(TAG_NAME[t])}">${t}</span>`).join('');
+    const tags=hubTags(r.h.u).map(t=>{const k=tagToReq(t),sel=FD.areas.includes(k),nd=need[k]>0;
+      return `<span class="chip${sel?' selc':nd?' needc':''}" title="${esc(TAG_NAME[t])}${sel?' · selected area':''}${nd?' · still needed in the plan':''}">${t}</span>`}).join('');
     const btn=ph?'Use for this slot':FD.term!=null?`Add to ${termName(FD.term)}`:'Add';
     return `<div class="frow"><div class="fmain"><span class="mono fcode">${esc(r.code)}</span> <span class="ftitle">${esc(r.h.t)}</span>${r.h.c!==4?` <span class="note">${r.h.c} cr</span>`:''}
       <div class="fmeta">${tags}<span class="fwhen">${when}</span>${!r.fit.ok?`<span class="fclash">Clashes with ${esc(r.fit.with)}</span>`:''}</div></div>
@@ -828,8 +832,9 @@ function renderFinder(){const {out,need}=finderResults();const ph=FD.replace&&S.
      <div class="achips">${chips}</div>
      <div class="row" style="margin-top:6px"><button type="button" class="btn" data-areas="miss">Missing areas</button><button type="button" class="btn" data-areas="none">All areas</button></div></div>
    <div class="row"><label class="chk" for="fdFit"><input type="checkbox" id="fdFit"${FD.fit?' checked':''}${FD.term==null?' disabled':''}> Only courses whose lecture fits the term's schedule</label>
+     <label class="chk" for="fdAll"><input type="checkbox" id="fdAll"${FD.all?' checked':''}${FD.areas.length<2?' disabled':''}> Must carry every selected area</label>
      <label class="chk" for="fdAbroad"><input type="checkbox" id="fdAbroad"${FD.abroad?' checked':''}> Include study abroad</label></div>
-   <div class="note">${out.length} course${out.length===1?'':'s'} running in ${YEAR}${FD.term!=null?` in ${SEASON[FD.term%2].toLowerCase()}`:''}. Sorted by how many still-missing units each covers; highlighted units are ones you still need.</div>
+   <div class="note">${out.length} course${out.length===1?'':'s'} running in ${YEAR}${FD.term!=null?` in ${SEASON[FD.term%2].toLowerCase()}`:''}. Courses carrying the most selected areas come first. <span class="chip selc">filled</span> units are your selected areas; <span class="chip needc">outlined</span> ones are other units the plan still needs.</div>
    <div class="flist">${rows||'<div class="empty">No courses match. Try more areas, another term, or turn off the schedule filter.</div>'}
    ${out.length>FD.limit?`<button type="button" class="btn" data-more style="align-self:center">Show more (${out.length-FD.limit} left)</button>`:''}</div>
    <div class="foot"><button type="button" class="btn" data-close>Close</button></div>`;
@@ -845,6 +850,7 @@ function renderFinder(){const {out,need}=finderResults();const ph=FD.replace&&S.
   $('#fdTerm').onchange=e=>{FD.term=e.target.value===''?null:+e.target.value;FD.limit=40;renderFinder()};
   $('#fdFit').onchange=e=>{FD.fit=e.target.checked;renderFinder()};
   $('#fdAbroad').onchange=e=>{FD.abroad=e.target.checked;renderFinder()};
+  $('#fdAll').onchange=e=>{FD.all=e.target.checked;FD.limit=40;renderFinder()};
 }
 function openCustom(code,term){
   const dept=/^PY /.test(code)?'PY':/^MA /.test(code)?'MA':/^WR /.test(code)?'WR':'OTHER';
