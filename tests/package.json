@@ -1,0 +1,7 @@
+{
+  "name": "physics-planner-tests",
+  "private": true,
+  "description": "Checks for the Physics BA Planner's transcript import",
+  "scripts": { "test": "node test_transcript.js" },
+  "devDependencies": { "jsdom": "^24.0.0", "pdfjs-dist": "3.11.174" }
+}

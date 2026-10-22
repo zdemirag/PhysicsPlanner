@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """
-Refresh the data inside the Physics BA Planner (physics-planner.html).
+Refresh the rules and data inside the Physics BA Planner (physics-planner.html).
 
-Run once a year, after the new class schedule is available:
+After editing the rules file (programs, courses, Hub, CAS and AP rules):
 
-    python build_planner.py --fall FALL.csv --spring SPRING.csv --planner physics-planner.html
+    python build_planner.py --planner physics-planner.html --rules planner-rules.json
+
+Once a year, after the new class schedule is available:
+
+    python build_planner.py --planner physics-planner.html --rules planner-rules.json \\
+        --fall FALL.csv --spring SPRING.csv --hub-cache hub-courses.json --refresh-hub
 
 What it does
+  0. Checks planner-rules.json and writes it into the planner's rules block:
+         <script id="planner-rules" type="application/json"> ... </script>
   1. Reads the two BU class-schedule exports (report BU_R0032B_SR_CLASS_SCHD_DOWNLD, CSV).
-  2. Collects, for every physics course numbered 100-599 and the math courses the planner
-     uses, which term it runs in, its lecture times, instructors, caps and enrollment.
+  2. Collects, for every physics course numbered 100-599 and every course the rules file
+     lists, which term it runs in, its lecture times, instructors, caps and enrollment.
   3. Fetches every BU Hub area page (https://www.bu.edu/hub/hub-courses/) and records the
      Hub units each course carries. Use --hub-cache to reuse a saved copy instead.
   4. Keeps the Hub courses that run in either term, with their titles, terms and times.
@@ -36,6 +43,8 @@ ARRANGED_OK = {"401", "402", "491", "492"}  # physics courses that run without s
 MANY_SECTIONS = 12  # Hub courses with more lecture patterns than this skip the clash check
 DATA_BLOCK = re.compile(
     r'(<script id="planner-data" type="application/json">)(.*?)(</script>)', re.S)
+RULES_BLOCK = re.compile(
+    r'(<script id="planner-rules" type="application/json">)(.*?)(</script>)', re.S)
 
 
 # ---------------------------------------------------------------- schedule CSVs
@@ -203,7 +212,74 @@ def load_hub_cache(path):
 
 # ---------------------------------------------------------------- build
 
+def load_rules(path):
+    """Read planner-rules.json and check the parts the planner depends on."""
+    try:
+        rules = json.loads(Path(path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        sys.exit(f"{path}: not valid JSON (line {e.lineno}, column {e.colno}): {e.msg}")
+    courses = rules.get("courses", {})
+    problems = []
+    for prog in rules.get("programs", []):
+        for g in prog.get("requirements", []):
+            codes = [c for o in g.get("options", []) for c in o] + g.get("from", [])
+            if g.get("placeholder"):
+                codes.append(g["placeholder"])
+            problems += [f"{prog['id']}: requirement names {c}, which is not in courses"
+                         for c in codes if c not in courses]
+        for entry in prog.get("standardPlan", []):
+            if entry[1] not in courses and not re.match(r"^[A-Z]{2,3}( [A-Z]{2})? \d{3}", entry[1]):
+                problems.append(f"{prog['id']}: standard plan names {entry[1]}, which is not in courses")
+    for code, c in courses.items():
+        for field in ("prereqs", "coreqs"):
+            for alt in c.get(field, []):
+                problems += [f"{code}: {field} names {x}, which is not in courses"
+                             for x in alt.split("|") if x not in courses]
+    if problems:
+        print("Warnings from the rules file:")
+        for line in problems:
+            print("  " + line)
+    return rules
+
+
+def detail_codes(rules):
+    """Courses that get full schedule detail: every PY 100-599 course, plus each numbered
+    course the rules file lists (math, astronomy, writing...). Returns {subject area: {catalog numbers}}."""
+    want = {}
+    for code in (rules or {}).get("courses", {}):
+        m = re.match(r"^(?:([A-Z]{3}) )?([A-Z]{2}) (\d{3}[A-Z]?)$", code)
+        if m:
+            want.setdefault((m[1] or "CAS") + m[2], set()).add(m[3])
+    if not rules:
+        want["CASMA"] = set(MATH)
+    return want
+
+
 def build(args):
+    if not (args.fall and args.spring) and not args.rules:
+        sys.exit("Nothing to do: pass --fall and --spring to refresh the schedule, and/or --rules.")
+    if bool(args.fall) != bool(args.spring):
+        sys.exit("Pass both --fall and --spring, or neither.")
+    rules = load_rules(args.rules) if args.rules else None
+    html = Path(args.planner).read_text(encoding="utf-8")
+    out = Path(args.out or args.planner)
+
+    if rules is not None:
+        if not RULES_BLOCK.search(html):
+            sys.exit(f"{args.planner}: no planner-rules block found.")
+        rblob = json.dumps(rules, separators=(",", ":"), ensure_ascii=False).replace("</", "<\\/")
+        html = RULES_BLOCK.sub(lambda m: m[1] + rblob + m[3], html, count=1)
+        print(f"Rules: {len(rules.get('programs', []))} programs, {len(rules.get('courses', {}))} courses "
+              f"from {args.rules}")
+
+    if args.fall and args.spring:
+        html = build_schedule(args, html, rules)
+
+    out.write_text(html, encoding="utf-8")
+    print(f"\nWrote {out} ({out.stat().st_size // 1024} KB)")
+
+
+def build_schedule(args, html, rules):
     fall_df, fall_term = read_schedule(args.fall)
     spring_df, spring_term = read_schedule(args.spring)
     fs, fy = term_label(fall_term)
@@ -214,13 +290,21 @@ def build(args):
         print(f"Warning: Fall {fy} and Spring {sy} are not one academic year.")
 
     terms = {"F": fall_df, "S": spring_df}
+    if rules is None:  # schedule-only rebuild: use the rules already in the planner
+        m = RULES_BLOCK.search(html)
+        try:
+            rules = json.loads(m[2].replace("<\\/", "</")) if m else None
+        except json.JSONDecodeError:
+            rules = None
+    want = detail_codes(rules)
 
-    # Physics and math detail
+    # Detail for physics 100-599 and every course in the rules file
     sched = {}
     for season, df in terms.items():
-        sub = df[((df["Subject Area"] == "CASPY") & df["Catalog Nbr"].str.match(r"^[1-5]\d\d$"))
-                 | ((df["Subject Area"] == "CASMA") & df["Catalog Nbr"].isin(MATH))]
-        for (subj, cat), e in course_terms(sub, season, keep_detail=True).items():
+        keep = (df["Subject Area"] == "CASPY") & df["Catalog Nbr"].str.match(r"^[1-5]\d\d$")
+        for subj, nums in want.items():
+            keep |= (df["Subject Area"] == subj) & df["Catalog Nbr"].isin(nums)
+        for (subj, cat), e in course_terms(df[keep], season, keep_detail=True).items():
             code = short_code(subj, cat)
             sched.setdefault(code, {})[season] = {"secs": e["secs"], "nsec": e["nsec"],
                                                   "comps": e["comps"], "title": e["title"]}
@@ -259,34 +343,36 @@ def build(args):
                 entry["secs"] = [{"m": json.loads(p)} for p in pats]
             h[season] = entry
 
-    meta = {"fall": f"Fall {fy}", "spring": f"Spring {sy}", "year": f"{fy}–{str(sy)[2:]}",
+    meta = {"fall": f"Fall {fy}", "spring": f"Spring {sy}", "year": f"{fy}\u2013{str(sy)[2:]}",
             "fallYear": fy, "built": datetime.date.today().isoformat(),
             "hubCourses": len(units), "hubScheduled": len(hub)}
     data = {"meta": meta, "sched": sched, "hub": hub}
     blob = json.dumps(data, separators=(",", ":"), ensure_ascii=False).replace("</", "<\\/")
-
-    html = Path(args.planner).read_text(encoding="utf-8")
     if not DATA_BLOCK.search(html):
         sys.exit(f"{args.planner}: no planner-data block found.")
     html = DATA_BLOCK.sub(lambda m: m[1] + blob + m[3], html, count=1)
-    out = Path(args.out or args.planner)
-    out.write_text(html, encoding="utf-8")
 
-    # Report
-    req = ["PY 251", "PY 252", "PY 351", "PY 355", "PY 405", "PY 406", "PY 408", "PY 410",
-           "PY 451", "PY 452", "PY 581", "MA 123", "MA 124", "MA 225"]
-    print(f"\n{meta['year']}: {len(sched)} physics/math courses, {len(hub)} Hub courses on the schedule")
-    for c in req:
-        pat = "".join(s for s in "FS" if s in sched.get(c, {}))
-        print(f"  {c}: {'fall & spring' if pat == 'FS' else 'fall' if pat == 'F' else 'spring' if pat == 'S' else 'NOT SCHEDULED'}")
-    print(f"\nWrote {out} ({out.stat().st_size // 1024} KB)")
+    # Report: the term each required course runs in, for every program
+    print(f"\n{meta['year']}: {len(sched)} courses with schedule detail, {len(hub)} Hub courses on the schedule")
+    for prog in (rules or {}).get("programs", []):
+        req = []
+        for g in prog.get("requirements", []):
+            for c in (g["options"][0] if g.get("options") else g.get("from", [])):
+                if c not in req:
+                    req.append(c)
+        print(f"  {prog.get('name', prog.get('id'))}:")
+        for c in req:
+            pat = "".join(s for s in "FS" if s in sched.get(c, {}))
+            print(f"    {c}: {'fall & spring' if pat == 'FS' else 'fall' if pat == 'F' else 'spring' if pat == 'S' else 'NOT SCHEDULED'}")
+    return html
 
 
 def main():
-    p = argparse.ArgumentParser(description="Refresh the Physics BA Planner's schedule and Hub data.")
-    p.add_argument("--fall", required=True, help="fall class schedule export (CSV)")
-    p.add_argument("--spring", required=True, help="spring class schedule export (CSV)")
+    p = argparse.ArgumentParser(description="Refresh the Physics BA Planner's rules, schedule and Hub data.")
     p.add_argument("--planner", required=True, help="planner HTML file to update")
+    p.add_argument("--rules", help="rules file (planner-rules.json) to write into the planner")
+    p.add_argument("--fall", help="fall class schedule export (CSV)")
+    p.add_argument("--spring", help="spring class schedule export (CSV)")
     p.add_argument("--out", help="write here instead of overwriting --planner")
     p.add_argument("--hub-cache", help="saved Hub data: read it if present, otherwise fetch and save it here")
     p.add_argument("--refresh-hub", action="store_true", help="fetch Hub pages even if --hub-cache exists")

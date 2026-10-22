@@ -1,0 +1,7 @@
+# BU class schedule exports: keep out of the repo (instructor names, enrollment)
+*SCHD_DOWNLD*.csv
+# student transcripts: never commit a real one (the invented sample is the exception)
+*.pdf
+!tests/sample-transcript.pdf
+tests/node_modules/
+tests/package-lock.json
